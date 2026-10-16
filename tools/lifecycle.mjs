@@ -47,8 +47,20 @@ const hand = (round, role, pkg, status, k, minutes, extra) => addLine(LEDGER, {
   tokens: { input: 900 * k, output: 250 * k, cacheRead: 4000 * k, cacheWrite: 400 * k }, ...(extra ? { extra } : {}),
 });
 const human = (kind, text) => addLine(HUMAN, { at: iso(), kind, text });
-let findingNo = 0;
-const finding = (round, source, severity, summary, status, file) => addLine(FINDINGS, { at: iso(), round, source, id: `F-${++findingNo}`, severity, summary, status, file });
+// A finding keeps its id when its status changes (a correction is a new line with the same id; the latest wins).
+const findingIds = new Map();
+const finding = (round, source, severity, summary, status, file) => {
+  if (!findingIds.has(summary)) findingIds.set(summary, `F-${findingIds.size + 1}`);
+  const id = findingIds.get(summary);
+  addLine(FINDINGS, { at: iso(), round, source, id, severity, summary, status, file });
+  return id;
+};
+// R-D22 records: a decision-request is open until a `decision` with the same id exists; testruns.jsonl carries one line per suite run.
+const DECISIONS = "docs/metrics/decisions.jsonl", TESTRUNS = "docs/metrics/testruns.jsonl";
+const ask = (id, kind, question, o = {}) => addLine(DECISIONS, { type: "decision-request", id, at: iso(), kind, question, phase: S.phase, ...(S.round ? { round: S.round } : {}), ...o });
+const answer = (id, text, o = {}) => addLine(DECISIONS, { type: "decision", id, at: iso(), answer: text, by: "user", ...o });
+let runNo = 0;
+const testrun = (suite, passed, failed, red, slice) => addLine(TESTRUNS, { at: iso(), id: `tr-${++runNo}`, suite, passed, failed, skipped: 0, ...(slice ? { slice } : {}), ...(red?.length ? { red } : {}), round: S.round || undefined });
 
 // ---- STATE.md and SESSION-NOTES.md are rewritten from one small state object ----
 const S = { phase: "Intake", round: "", note: "", waiting: [], where: "", inFlight: "nothing", next: "", resumeAt: null };
@@ -183,6 +195,7 @@ step("intake", "overview", "project folder with the brief; the project appears i
 step("intake", "overview", "STATE shows Phase: Intake and the harness version", () => {
   hand("Intake", "facilitator", "brief", "done", 6, 1.2, "brief read, 5 questions drafted");
   S.waiting = ["Read [00-brief.md](00-brief.md) and say if it is right."]; S.note = `Brief in [00-brief.md](00-brief.md).`;
+  ask("brief-ok", "other", "Read the brief and say if it is right.", { options: ["Right", "Needs changes"], default: "Right", blocks: "Circle 1 (the facilitator waits for your read).", source: "docs/product/00-brief.md" });
   sync();
 });
 
@@ -194,6 +207,8 @@ step("circles", "overview", "circle-01.md with 5 questions; human-log gets 5 que
   S.waiting = CIRCLE_Q.map((q, i) => `Q${i + 1}: ${q[0]} (default: ${q[1]})`);
   writeCircle("circle-01.md", "Circle 1", CIRCLE_Q, [], score);
   CIRCLE_Q.forEach((q, i) => human("question", `Q${i + 1}: ${q[0]} Default: ${q[1]}`));
+  answer("brief-ok", "Right");
+  CIRCLE_Q.forEach((q, i) => ask(`circle1-q${i + 1}`, "circle-question", `Q${i + 1}: ${q[0]}`, { options: [q[1]], default: q[1], blocks: "Circle 1 readiness (needs 16 of 20 to leave Circles).", source: `docs/product/circles/circle-01.md#q${i + 1}` }));
   hand("Circles", "facilitator", "circle-01", "done", 9, 2.1, "5 questions with defaults");
   sync();
 });
@@ -203,6 +218,7 @@ CIRCLE_Q.forEach((q, i) => step("circles", "overview", `Q${i + 1} answered; read
   const answered = ANSWER.slice(0, i + 1);
   writeCircle("circle-01.md", "Circle 1", CIRCLE_Q, answered, score);
   human("decision", `Q${i + 1}: ${ANSWER[i]}`);
+  answer(`circle1-q${i + 1}`, ANSWER[i]);
   S.waiting = CIRCLE_Q.slice(i + 1).map((x, j) => `Q${i + 2 + j}: ${x[0]} (default: ${x[1]})`);
   S.note = `Circle 1: ${i + 1} of 5 answered. Readiness ${score} of 20 (threshold 16).`;
   S.where = `Circles. Circle 1: ${i + 1} of 5 answered, readiness ${score}/20.`;
@@ -211,6 +227,7 @@ CIRCLE_Q.forEach((q, i) => step("circles", "overview", `Q${i + 1} answered; read
 step("circles", "overview", "readiness 15 < 16: circle-02.md with 3 follow-ups", () => {
   writeCircle("circle-02.md", "Circle 2", CIRCLE_FOLLOW, [], score);
   CIRCLE_FOLLOW.forEach((q, i) => human("question", `F${i + 1}: ${q[0]} Default: ${q[1]}`));
+  CIRCLE_FOLLOW.forEach((q, i) => ask(`circle2-f${i + 1}`, "circle-question", `F${i + 1}: ${q[0]}`, { options: [q[1]], default: q[1], blocks: "Circle 2 readiness (15 of 20, needs 16).", source: `docs/product/circles/circle-02.md#f${i + 1}` }));
   S.waiting = CIRCLE_FOLLOW.map((q, i) => `F${i + 1}: ${q[0]} (default: ${q[1]})`);
   S.note = "Circle 2 open: 3 follow-ups. Readiness 15 of 20, below 16.";
   S.where = "Circles. Circle 2 open (3 follow-ups).";
@@ -221,15 +238,18 @@ CIRCLE_FOLLOW.forEach((q, i) => step("circles", "overview", `F${i + 1} answered;
   score = READY2[i];
   writeCircle("circle-02.md", "Circle 2", CIRCLE_FOLLOW, FOLLOW_ANSWER.slice(0, i + 1), score);
   human("decision", `F${i + 1}: ${FOLLOW_ANSWER[i]}`);
+  answer(`circle2-f${i + 1}`, FOLLOW_ANSWER[i]);
   S.waiting = CIRCLE_FOLLOW.slice(i + 1).map((x, j) => `F${i + 2 + j}: ${x[0]} (default: ${x[1]})`);
   S.note = `Circle 2: ${i + 1} of 3 answered. Readiness ${score} of 20.`;
-  if (i === 2) { S.waiting = ["Your go to leave Circles (phase gate) so Spec can start."]; S.note = "Readiness 19 of 20, above 16. Waiting for the go."; }
+  if (i === 2) { S.waiting = ["Your go to leave Circles (phase gate) so Spec can start."]; S.note = "Readiness 19 of 20, above 16. Waiting for the go.";
+    ask("gate-leave-circles", "gate", "Leave Circles and start Spec? Readiness is 19 of 20 (threshold 16).", { options: ["approve", "reject"], default: "approve", blocks: "The Spec phase (requirements and ACs).", source: "docs/product/circles/circle-02.md#readiness" }); }
   sync();
 }));
 
 // Spec
 step("spec", "overview", "go to leave Circles; Phase: Spec", () => {
   human("go", "leave Circles, start Spec");
+  answer("gate-leave-circles", "approve", { how: "default" });
   S.phase = "Spec"; S.note = "Circles left (go given). Spec writer is working."; S.where = "Spec. Writing 20-requirements.md.";
   S.inFlight = "spec-writer on 20-requirements.md"; S.next = "Requirements, then the gate: approve Spec and Plan"; S.waiting = [];
   sync();
@@ -244,12 +264,14 @@ step("spec", "overview", "gate 'approve Spec and Plan' waits for you", () => {
   S.inFlight = "nothing (gate)"; S.waiting = ["Gate: approve Spec and Plan (12 requirements in [20-requirements.md](20-requirements.md))."];
   S.note = "Spec complete. Gate open."; S.where = "Spec complete. Gate: approve Spec and Plan."; S.next = "After your go: architect writes ADRs and the plan";
   human("question", "Gate: approve Spec and Plan?");
+  ask("gate-spec-plan", "gate", "Approve Spec and Plan (12 requirements)?", { options: ["approve", "reject"], default: "approve", why: "All 12 requirements have testable ACs; readiness 19 of 20.", blocks: "The architect (ADRs and the plan).", source: "docs/product/20-requirements.md#r-12-remember-the-last-search" });
   sync();
 });
 
 // Plan
 step("plan", "overview", "go: Spec approved; Phase: Plan", () => {
   human("go", "approve Spec and Plan");
+  answer("gate-spec-plan", "approve", { how: "default" });
   S.phase = "Plan"; S.note = "Spec approved. Architect is working."; S.where = "Plan. Spec approved; writing ADRs and 50-plan.md.";
   S.inFlight = "architect on decisions/ and 50-plan.md"; S.waiting = []; S.next = "Plan with 2 groups x 3 slices, then Build";
   sync();
@@ -277,6 +299,7 @@ step("build", "overview", "G1-S1 starts: ledger 'started' row, In flight changes
 });
 step("build", "plan", "G1-S1 done: ledger row with tokens{}", () => {
   hand("G1", "implementer", "G1-S1", "done", 40, 3.1, "12 unit tests green");
+  testrun("unit", 12, 0, [], "G1-S1");
   S.where = "Build. G1-S1 done, G1-S2 next."; S.inFlight = "nothing"; sync();
 });
 step("build", "plan", "G1-S2 starts", () => {
@@ -285,6 +308,7 @@ step("build", "plan", "G1-S2 starts", () => {
 });
 step("build", "ledger", "one red test: test-engineer row 'blocked' and a high finding", () => {
   hand("G1", "test-engineer", "G1-S2", "blocked", 18, 1.6, "1 test red: list sorts oldest first");
+  testrun("unit", 20, 1, ["list sorts newest first (list.test.js)"], "G1-S2");
   finding("G1", "review", "high", "G1-S2: test 'newest first' is red", "open", "list.js");
   flight("G1-S2", "implementer fixing 1 red test on G1-S2 (list sorts oldest first)");
   S.waiting = ["Nothing to decide yet; 1 test red on G1-S2 (agent is fixing)."]; sync();
@@ -292,12 +316,14 @@ step("build", "ledger", "one red test: test-engineer row 'blocked' and a high fi
 step("build", "plan", "red test fixed, G1-S2 done; finding fixed", () => {
   finding("G1", "review", "high", "G1-S2: test 'newest first' is red", "fixed", "list.js");
   hand("G1", "implementer", "G1-S2", "done", 35, 2.8, "all tests green");
+  testrun("unit", 21, 0, [], "G1-S2");
   S.waiting = []; S.where = "Build. G1-S2 done, G1-S3 next."; S.inFlight = "nothing"; sync();
 });
 step("build", "overview", "G1-S3 starts, then its agent stalls: 'stalled' ledger row and finding", () => {
   hand("G1", "implementer", "G1-S3", "started", 0, 0);
   hand("G1", "implementer", "G1-S3", "stalled", 6, 0, "no output for 28 min");
-  finding("G1", "proxy", "medium", "G1-S3: agent stalled (no output for 28 min)", "open", "store.js");
+  const stallF = finding("G1", "proxy", "medium", "G1-S3: agent stalled (no output for 28 min)", "open", "store.js");
+  ask("stalled-g1-s3", "other", "The agent on G1-S3 has produced no output for 28 min: restart it or stop it?", { options: ["Restart the agent", "Stop it"], default: "Restart the agent", why: "Stalled agents cost nothing but hold the slice.", blocks: "G1-S3 and the G1 review.", source: "docs/product/50-plan.md#g1-s3-edit-and-delete", slice: "G1-S3", findings: [stallF] });
   flight("G1-S3", "implementer on G1-S3 (edit and delete): STALLED, no output for 28 min");
   S.waiting = ["Agent on G1-S3 is stalled: restart it or stop it?"]; sync();
 });
@@ -307,6 +333,7 @@ step("build", "overview", "stale moment: ledger moves on, RESUME 'Last updated' 
 });
 step("build", "overview", "RESUME refreshed; G1-S3 done; stale banner clears", () => {
   S.resumeAt = null; S.waiting = [];
+  answer("stalled-g1-s3", "Restart the agent", { how: "default" });
   hand("G1", "implementer", "G1-S3", "done", 30, 2.2, "restarted, finished; delete asks for confirmation");
   S.where = "Build. G1-S1..S3 built; review next."; S.inFlight = "reviewer on G1"; sync();
 });
@@ -315,6 +342,7 @@ step("build", "reviews", "G1-review.md with 3 findings; findings.jsonl rows", ()
   finding("G1", "review", "medium", "G1-R01 delete does not ask for confirmation", "open", "store.js");
   finding("G1", "review", "low", "G1-R02 tag chips overflow at 360 px", "open", "list.js");
   finding("G1", "review", "low", "G1-R03 storage key not versioned", "open", "store.js");
+  testrun("unit", 24, 0, [], "G1-S3");
   hand("G1", "reviewer", "G1", "done", 22, 3.5, "3 findings, no blocker");
   S.inFlight = "implementer fixing 3 review findings on G1"; sync();
 });
@@ -324,12 +352,15 @@ step("accept", "overview", "review findings fixed; group G1 waits for your accep
   ["G1-R01 delete does not ask for confirmation", "G1-R02 tag chips overflow at 360 px", "G1-R03 storage key not versioned"].forEach((t, i) =>
     finding("G1", "review", ["medium", "low", "low"][i], t, "fixed", i === 1 ? "list.js" : "store.js"));
   hand("G1", "implementer", "G1-fix", "done", 15, 2, "3 findings fixed, tests green");
+  testrun("unit", 27, 0, [], "G1-fix"); testrun("e2e", 6, 0, [], "G1-fix");
+  ask("accept-g1", "slice-review", "Accept group G1 (Recipe store)? Open the page and try add, list, edit, delete.", { options: ["Accept", "Changes needed"], default: "Accept", blocks: "Group G2 (search and share).", source: "docs/reviews/G1-review.md", slice: "G1", findings: ["F-3", "F-4", "F-5"].filter((f) => [...findingIds.values()].includes(f)), tests: ["unit", "e2e"] });
   S.where = "Build. G1 built, reviewed, fixed. Waiting for accept."; S.inFlight = "nothing";
   S.waiting = ["Accept group G1 (Recipe store): open the page and try add, list, edit, delete."]; S.note = "G1 waits for acceptance.";
   S.next = "After your accept: start G2"; sync();
 });
 step("accept", "plan", "G1 accepted (human-log 'go'); group and slices turn done", () => {
   human("go", "accept G1");
+  answer("accept-g1", "Accept", { how: "default" });
   S.where = "Build. G1 accepted."; S.waiting = []; S.next = "G2 slices"; sync();
 });
 step("accept", "overview", "next group starts: G2-S1 in flight", () => {
