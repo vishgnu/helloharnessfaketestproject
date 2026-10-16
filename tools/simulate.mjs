@@ -18,7 +18,7 @@ const tick = () => {
   const n = i++;
   add("ledger.jsonl", { at: at(), round: "2", role: roles[n % roles.length], pkg: `R2-sim-${n}`, model: "sonnet",
     tokens: { input: 1000 * (n + 1), output: 300, cacheRead: 5000, cacheWrite: 500 }, minutes: 1 + n / 2, status: "done", schemaVersion: 1 });
-  if (n % 2) add("findings.jsonl", { at: at(), round: "2", source: "review", id: `F-${n}`, severity: n % 3 ? "minor" : "major", summary: `fake finding ${n}`, status: "open", file: "index.html", schemaVersion: 1 });
+  if (n % 2) add("findings.jsonl", { at: at(), round: "2", source: "review", id: `F-${n}`, severity: n % 3 ? "low" : "medium", summary: `fake finding ${n}`, status: "open", file: "index.html", schemaVersion: 1 });
   if (n % 3 === 2) add("human-log.jsonl", { at: at(), kind: "question", text: `fake question ${n}` });
   console.log(`event ${n + 1}/${count}`);
   if (i < count) setTimeout(tick, interval);
