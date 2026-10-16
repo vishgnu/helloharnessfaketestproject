@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Lifecycle simulator: plays the first phases of a harness project (Intake, Circles, Spec, Plan, Build, Accept)
 // into a SEPARATE sibling project folder, in the real file formats, so the live dashboard can be watched.
-// Usage: node tools/lifecycle.mjs [--target ../hello-lifecycle] [--speed 1] [--from intake] [--to accept] [--step]
+// Usage: node tools/lifecycle.mjs [--target ../hello-lifecycle] [--speed 1] [--from intake] [--to accept] [--step] [--customer "Acme"] [--short "Recipe box"]
+// --customer / --short write `_Customer:` / `_Short:` lines into STATE.md (the dashboard shows them when its registry has no value).
 // Fake data only. Node built-ins only. The fixture project itself is never touched.
 import { appendFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -14,13 +15,27 @@ const MARKER = ".lifecycle-sim";
 
 // ---- arguments ----
 const args = process.argv.slice(2);
+const USAGE = "usage: node tools/lifecycle.mjs [--target dir] [--speed n>0] [--from phase] [--to phase] [--step] [--customer name] [--short name] [--help]\nphases: " + PHASES.join(", ");
+{ // unknown flags, a flag without value or --help: print usage and exit BEFORE anything is written (a stray run used to create a folder)
+  const WITH_VALUE = ["--target", "--speed", "--from", "--to", "--customer", "--short"];
+  let bad = null;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (WITH_VALUE.includes(a)) { if (i + 1 >= args.length || args[i + 1].startsWith("--")) { bad = `${a} needs a value`; break; } i++; }
+    else if (a !== "--step" && a !== "--help" && a !== "-h") { bad = `unknown argument: ${a}`; break; }
+  }
+  if (args.includes("--help") || args.includes("-h")) { console.log(USAGE); process.exit(0); }
+  if (bad) { console.error(`${bad}\n${USAGE}`); process.exit(2); }
+}
 const opt = (name, dflt) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] : dflt; };
 const target = resolve(opt("target", "../hello-lifecycle"));
 const speed = Number(opt("speed", "1"));
 const from = PHASES.indexOf(opt("from", "intake")), to = PHASES.indexOf(opt("to", "accept"));
 const stepMode = args.includes("--step");
+const oneLineName = (v) => String(v ?? "").replace(/[\r\n_]+/g, " ").trim();
+const customer = oneLineName(opt("customer", "")), shortName = oneLineName(opt("short", ""));
 if (!(speed > 0) || from < 0 || to < 0 || from > to) {
-  console.error("usage: node tools/lifecycle.mjs [--target dir] [--speed n>0] [--from phase] [--to phase] [--step]\nphases: " + PHASES.join(", "));
+  console.error(USAGE);
   process.exit(2);
 }
 
@@ -72,7 +87,7 @@ function sync() {
 Harness version: ${HARNESS_VERSION}
 
 _Target: a tiny recipe box web page. Updated ${iso().slice(0, 10)}._
-
+${customer ? `\n_Customer: ${customer}._\n` : ""}${shortName ? `\n_Short: ${shortName}._\n` : ""}
 ${head} ${S.note}
 
 ## Waiting for you
