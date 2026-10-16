@@ -3,6 +3,7 @@
 // into a SEPARATE sibling project folder, in the real file formats, so the live dashboard can be watched.
 // Usage: node tools/lifecycle.mjs [--target ../hello-lifecycle] [--speed 1] [--from intake] [--to accept] [--step] [--customer "Acme"] [--short "Recipe box"] [--scenario default|mockup]
 // --customer / --short write `_Customer:` / `_Short:` lines into STATE.md (the dashboard shows them when its registry has no value).
+// (mockup: the Spec detour of round 1 and the redo belong to "circles", so `--to circles` stops back in Circles with ONE open gate, DG-33)
 // --scenario mockup plays a client UX mock-up with a redo (journey J8): variants round 1, client feedback, back to Circles, round 2, Plan, Build, Accept.
 // Fake data only. Node built-ins only. The fixture project itself is never touched.
 import { appendFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -460,13 +461,13 @@ if (scenario === "mockup") {
     ask("gate-leave-circles", "gate", "Leave Circles and start Spec? Four questions answered, layout A picked.", { options: ["approve", "reject"], default: "approve", blocks: "The Spec phase.", source: "docs/product/circles/circle-01.md" });
     S.waiting = ["Your go to leave Circles (phase gate)."]; S.note = "Layout A picked. Waiting for the go."; sync();
   });
-  step("spec", "overview", "go; Phase: Spec; requirements for layout A", () => {
+  step("circles", "overview", "go; Phase: Spec; requirements for layout A", () => {
     human("go", "leave Circles, start Spec"); answer("gate-leave-circles", "approve", { how: "default" });
     put("docs/product/20-requirements.md", `# 20 Requirements: checkout mock-up\n\n## R-1 One-page checkout (variant A)\n- AC-1-1: cart, address and payment are on one page.\n\n## R-2 Phone first\n- AC-2-1: no horizontal scroll at 360 px.\n`);
     hand("Spec", "spec-writer", "20-requirements", "done", 6, 1.4, "2 requirements for layout A");
     S.phase = "Spec"; S.note = "Spec started for layout A."; S.where = "Spec. 2 requirements for layout A."; S.inFlight = "spec-writer"; S.waiting = []; S.next = "Gate: approve Spec and Plan"; sync();
   });
-  step("spec", "overview", "client feedback: human-log lines and comments.jsonl on the variants", () => {
+  step("circles", "overview", "client feedback: human-log lines and comments.jsonl on the variants", () => {
     human("instruction", "Client call: the one-page layout feels crowded on a phone; they like the three steps of B and want delivery cost shown earlier.");
     comment("checkout", 1, "variant:A", "Too much on one screen on a phone.");
     comment("checkout", 2, "variant:B", "This is the flow we want. Show delivery cost on step 1.");
