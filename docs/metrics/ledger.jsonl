@@ -1,0 +1,4 @@
+{"at":"2026-10-16T08:00:00Z","round":"1","role":"implementer","pkg":"R1-page","model":"sonnet","tokensK":42.5,"minutes":6.2,"status":"done","reviewed":true}
+{"at":"2026-10-16T08:20:00Z","round":"1","role":"reviewer","pkg":"R1-page","model":"sonnet","tokensK":18.1,"minutes":2.4,"status":"done"}
+{"at":"2026-10-16T08:40:00Z","round":"1","role":"customer-proxy","pkg":"R1-accept","model":"sonnet","tokensK":9.3,"minutes":1.5,"status":"accepted"}
+{"at":"2026-10-16T09:20:00Z","round":"2","role":"implementer","pkg":"R2-colour","model":"sonnet","tokens":{"input":30000,"output":4200,"cacheRead":120000,"cacheWrite":8000},"minutes":4.0,"status":"in-progress","schemaVersion":1}
